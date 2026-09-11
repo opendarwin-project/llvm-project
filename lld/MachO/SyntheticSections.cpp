@@ -124,7 +124,9 @@ void MachHeaderSection::writeTo(uint8_t *buf) const {
   hdr->filetype = config->outputType;
   hdr->ncmds = loadCommands.size();
   hdr->sizeofcmds = sizeOfCmds;
-  hdr->flags = MH_DYLDLINK;
+  // A -static binary is fully self-contained: do not mark it as
+  // dynamically linked.
+  hdr->flags = config->staticLink ? 0 : MH_DYLDLINK;
 
   if (config->namespaceKind == NamespaceKind::twolevel)
     hdr->flags |= MH_NOUNDEFS | MH_TWOLEVEL;

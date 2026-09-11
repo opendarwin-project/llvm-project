@@ -669,6 +669,10 @@ def U : Separate<["-"], "U">,
     MetaVarName<"<symbol>">,
     HelpText<"Allow <symbol> to have no definition">,
     Group<grp_resolve>;
+def no_undefined : Flag<["-", "--"], "no-undefined">,
+    HelpText<"Fail if the output contains undefined symbols (alias for '-undefined error', GNU ld compatibility)">,
+    Flags<[HelpHidden]>,
+    Group<grp_resolve>;
 def undefined : Separate<["-"], "undefined">,
     MetaVarName<"<treatment>">,
     HelpText<"Handle undefined symbols according to <treatment>: error, warning, suppress, or dynamic_lookup (default is error)">,

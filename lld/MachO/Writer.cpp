@@ -841,7 +841,10 @@ template <class LP> void Writer::createLoadCommands() {
 
   switch (config->outputType) {
   case MH_EXECUTE:
-    in.header->addLoadCommand(make<LCLoadDylinker>());
+    // A -static binary is self-contained and has no dyld, so there must be
+    // no LC_LOAD_DYLINKER command either.
+    if (!config->staticLink)
+      in.header->addLoadCommand(make<LCLoadDylinker>());
     break;
   case MH_DYLIB:
     in.header->addLoadCommand(make<LCDylib>(LC_ID_DYLIB, config->installName,
@@ -938,6 +941,9 @@ template <class LP> void Writer::createLoadCommands() {
     }
 
     ordinal = dylibFile->ordinal = dylibOrdinal++;
+    if (config->staticLink)
+      error(Twine("-static cannot be used with dylib '") +
+            dylibFile->getName() + "'");
     LoadCommandType lcType = LC_LOAD_DYLIB;
     if (dylibFile->reexport) {
       if (dylibFile->forceWeakImport)
@@ -1016,6 +1022,26 @@ static void orderObjCStubsByCallerPriority(
 static void sortSegmentsAndSections() {
   TimeTraceScope timeScope("Sort segments and sections");
   sortOutputSegments();
+
+  // -segment_order <seg:seg:...> requests an explicit layout sequence, as
+  // used by the XNU kernel link.  Segments missing from the list keep their
+  // relative order but follow the listed ones; __LINKEDIT always stays last
+  // because its contents are only known after every other segment is
+  // placed.
+  if (!config->segmentOrder.empty()) {
+    auto rank = [](const OutputSegment *seg) -> uint64_t {
+      if (seg->name == segment_names::linkEdit)
+        return std::numeric_limits<uint64_t>::max();
+      auto it = find(config->segmentOrder, seg->name);
+      if (it == config->segmentOrder.end())
+        return config->segmentOrder.size();
+      return it - config->segmentOrder.begin();
+    };
+    llvm::stable_sort(outputSegments, [&](const OutputSegment *a,
+                                          const OutputSegment *b) {
+      return rank(a) < rank(b);
+    });
+  }
 
   DenseMap<const InputSection *, int> isecPriorities =
       priorityBuilder.buildInputSectionPriorities();
@@ -1167,9 +1193,23 @@ void Writer::finalizeAddresses() {
   // Note that at this point, __LINKEDIT sections are empty, but we need to
   // determine addresses of other segments/sections before generating its
   // contents.
+  // -segalign overrides the page granularity used between segments, and
+  // -image_base gives the load address of the first segment laid out.
+  uint64_t segAlign = config->segmentAlign ? config->segmentAlign : pageSize;
+  if (config->imageBase)
+    addr = config->imageBase;
+
   for (OutputSegment *seg : outputSegments) {
     if (seg == linkEditSegment)
       continue;
+    // -segaddr pins this segment's vmaddr. dyld requires ascending
+    // segment addresses, so a request below the address already reached is
+    // ignored.
+    auto fixed = find_if(config->segmentAddresses, [&](const SegmentAddress &a) {
+      return a.name == seg->name;
+    });
+    if (fixed != config->segmentAddresses.end())
+      addr = std::max(addr, fixed->addr);
     seg->addr = addr;
     assignAddresses(seg);
     // codesign / libstuff checks for segment ordering by verifying that
@@ -1177,8 +1217,8 @@ void Writer::finalizeAddresses() {
     // alignToPowerOf2() before (instead of after) computing fileSize to ensure
     // that the segments are contiguous. We handle addr / vmSize similarly for
     // the same reason.
-    fileOff = alignToPowerOf2(fileOff, pageSize);
-    addr = alignToPowerOf2(addr, pageSize);
+    fileOff = alignToPowerOf2(fileOff, segAlign);
+    addr = alignToPowerOf2(addr, segAlign);
     seg->vmSize = addr - seg->addr;
     seg->fileSize = fileOff - seg->fileOff;
     seg->assignAddressesToStartEndSymbols();
@@ -1204,6 +1244,13 @@ void Writer::finalizeLinkEditSegment() {
 
   // Now that __LINKEDIT is filled out, do a proper calculation of its
   // addresses and offsets.
+  // __LINKEDIT is laid out after every other segment, so honor -segaddr
+  // __LINKEDIT here rather than in the main loop.
+  auto linkEditAddr = find_if(config->segmentAddresses, [&](const SegmentAddress &a) {
+    return a.name == segment_names::linkEdit;
+  });
+  if (linkEditAddr != config->segmentAddresses.end())
+    addr = std::max(addr, linkEditAddr->addr);
   linkEditSegment->addr = addr;
   assignAddresses(linkEditSegment);
   // No need to page-align fileOff / addr here since this is the last segment.

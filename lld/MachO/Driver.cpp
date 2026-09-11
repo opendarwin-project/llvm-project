@@ -1009,6 +1009,12 @@ static TargetInfo *createTargetInfo(InputArgList &args) {
 static UndefinedSymbolTreatment
 getUndefinedSymbolTreatment(const ArgList &args) {
   StringRef treatmentStr = args.getLastArgValue(OPT_undefined);
+  // GNU ld compatibility: build systems (meson, with its default b_lundef
+  // setting) pass --no-undefined to require that all undefined symbols are
+  // resolved. Treat it as an alias for '-undefined error' unless the more
+  // permissive '-undefined dynamic_lookup' was explicitly requested.
+  if (args.hasArg(OPT_no_undefined) && treatmentStr != "dynamic_lookup")
+    return UndefinedSymbolTreatment::error;
   auto treatment =
       StringSwitch<UndefinedSymbolTreatment>(treatmentStr)
           .Cases({"error", ""}, UndefinedSymbolTreatment::error)
@@ -1080,6 +1086,19 @@ static void warnIfDeprecatedOption(const Option &opt) {
 static void warnIfUnimplementedOption(const Option &opt) {
   if (!opt.getGroup().isValid() || !opt.hasFlag(DriverFlag::HelpHidden))
     return;
+  // Options that this linker does implement must not be reported as
+  // unimplemented just because they are hidden from -help.
+  switch (opt.getID()) {
+  case OPT_static:
+  case OPT_no_undefined:
+  case OPT_image_base:
+  case OPT_segaddr:
+  case OPT_segalign:
+  case OPT_segment_order:
+    return;
+  default:
+    break;
+  }
   switch (opt.getGroup().getID()) {
   case OPT_grp_deprecated:
     // warn about deprecated options elsewhere
@@ -1850,6 +1869,45 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
 
   if (errorCount())
     return false;
+
+  // Segment layout options: -image_base gives the load address of the
+  // first segment, -segaddr pins individual ones, -segalign sets the
+  // granularity used between segments and -segment_order the layout
+  // sequence.  Consumed by Writer::finalizeAddresses() /
+  // Writer::sortSegmentsAndSections().  The addresses are parsed with
+  // StringRef::getAsInteger() because they can exceed INT64_MAX (the
+  // kernel runs from high canonical addresses), which args::getHex()
+  // cannot hold.
+  if (const Arg *arg = args.getLastArg(OPT_image_base)) {
+    llvm::StringRef value = arg->getValue();
+    if (value.getAsInteger(0, config->imageBase))
+      error("-image_base: invalid address '" + value + "'");
+  }
+  if (const Arg *arg = args.getLastArg(OPT_segalign)) {
+    llvm::StringRef value = arg->getValue();
+    if (value.getAsInteger(0, config->segmentAlign))
+      error("-segalign: invalid alignment '" + value + "'");
+  }
+  for (const Arg *arg : args.filtered(OPT_segaddr)) {
+    StringRef addrStr = arg->getValue(1);
+    uint64_t addr = 0;
+    if (addrStr.getAsInteger(0, addr)) {
+      error("-segaddr: invalid address '" + addrStr +
+            "' for segment " + arg->getValue(0));
+      continue;
+    }
+    config->segmentAddresses.push_back({arg->getValue(0), addr});
+  }
+  if (const Arg *arg = args.getLastArg(OPT_segment_order)) {
+    llvm::StringRef remaining = arg->getValue();
+    do {
+      size_t colon = remaining.find(':');
+      config->segmentOrder.push_back(remaining.substr(0, colon));
+      if (colon == StringRef::npos)
+        break;
+      remaining = remaining.substr(colon + 1);
+    } while (!remaining.empty());
+  }
 
   if (args.hasArg(OPT_pagezero_size)) {
     uint64_t pagezeroSize = args::getHex(args, OPT_pagezero_size, 0);

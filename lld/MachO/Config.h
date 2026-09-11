@@ -90,6 +90,11 @@ struct SegmentProtection {
   uint32_t initProt;
 };
 
+struct SegmentAddress {
+  llvm::StringRef name;
+  uint64_t addr;
+};
+
 class SymbolPatterns {
 public:
   // GlobPattern can also match literals,
@@ -217,6 +222,13 @@ struct Configuration {
   // so use a vector instead of a map.
   std::vector<SectionAlign> sectionAlignments;
   std::vector<SegmentProtection> segmentProtections;
+  // Segment layout controls for fully static images, whose boot code
+  // assumes the link-time layout it requested (-image_base, -segaddr,
+  // -segalign, -segment_order).  The XNU kernel link uses all four.
+  uint64_t imageBase = 0;
+  uint64_t segmentAlign = 0;
+  std::vector<SegmentAddress> segmentAddresses;
+  std::vector<llvm::StringRef> segmentOrder;
   bool ltoDebugPassManager = false;
   bool emitLLVM = false;
   llvm::StringRef codegenDataGeneratePath;
