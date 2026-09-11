@@ -741,6 +741,13 @@ static void addBindingsForStub(Symbol *sym) {
                            sym->stubsIndex * target->wordSize);
       in.weakBinding->addEntry(sym, in.lazyPointers->isec,
                                sym->stubsIndex * target->wordSize);
+    } else if (config->bindAtLoad) {
+      // Move this binding to the regular (eager) bind table instead of the
+      // lazy-bind table, exactly like real ld64's -bind_at_load: dyld
+      // resolves it upfront, so nothing ever needs to reach the
+      // stub-helper / dyld_stub_binder for it.
+      in.binding->addEntry(dysym, in.lazyPointers->isec,
+                           sym->stubsIndex * target->wordSize);
     } else {
       in.lazyBinding->addEntry(dysym);
     }

@@ -1861,6 +1861,7 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   symtab = std::make_unique<SymbolTable>();
   config->outputType = getOutputType(args);
   config->isKext = args.hasArg(OPT_kext);
+  config->bindAtLoad = config->isKext || args.hasArg(OPT_bind_at_load);
   target = createTargetInfo(args);
   depTracker = std::make_unique<DependencyTracker>(
       args.getLastArgValue(OPT_dependency_info));

@@ -134,6 +134,14 @@ struct Configuration {
   // link line, e.g. a Kernel.framework TBD stub) - see getOutputType() in
   // Driver.cpp.
   bool isKext = false;
+  // Real ld64's -bind_at_load moves lazily-bound symbol references to the
+  // regular (eager) bind table instead of the lazy-bind table, so dyld
+  // resolves them upfront and never needs to invoke the stub-helper /
+  // dyld_stub_binder machinery at all. Kexts are always effectively
+  // "bind at load" (kxld does the real relocation, not dyld, and there's
+  // no libSystem/dyld_stub_binder available to link against), so isKext
+  // implies bindAtLoad below (see Driver.cpp).
+  bool bindAtLoad = false;
   bool implicitDylibs = false;
   bool isPic = false;
   bool headerPadMaxInstallNames = false;
