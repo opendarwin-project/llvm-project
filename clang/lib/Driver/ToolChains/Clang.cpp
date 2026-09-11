@@ -7570,6 +7570,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    RawTriple.isOSDarwin() && !KernelOrKext))
     CmdArgs.push_back("-fregister-global-dtors-with-atexit");
 
+  if (KernelOrKext && RawTriple.isOSBinFormatMachO()) {
+    CmdArgs.push_back("-mllvm");
+    CmdArgs.push_back("-disable-atexit-based-global-dtor-lowering");
+  }
+
   Args.addOptInFlag(CmdArgs, options::OPT_fuse_line_directives,
                     options::OPT_fno_use_line_directives);
 

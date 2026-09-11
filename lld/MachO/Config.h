@@ -127,6 +127,13 @@ struct Configuration {
   bool forceLoadObjC = false;
   bool forceLoadSwift = false; // Only applies to LC_LINKER_OPTIONs.
   bool staticLink = false;
+  // Set by `-kext`: XNU kernel extensions are written out as a real
+  // MH_KEXT_BUNDLE (Apple's `ld -kext`), but otherwise behave exactly like
+  // an `-bundle` link (no `_main` entry point required, undefined KPI
+  // symbols resolved against whatever stub/import libraries are on the
+  // link line, e.g. a Kernel.framework TBD stub) - see getOutputType() in
+  // Driver.cpp.
+  bool isKext = false;
   bool implicitDylibs = false;
   bool isPic = false;
   bool headerPadMaxInstallNames = false;

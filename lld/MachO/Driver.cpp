@@ -72,6 +72,13 @@ std::unique_ptr<Configuration> macho::config;
 std::unique_ptr<DependencyTracker> macho::depTracker;
 
 static HeaderFileType getOutputType(const InputArgList &args) {
+  // `-kext` (XNU kernel extensions) behaves like `-bundle` for every
+  // purpose lld cares about (no entry point, ordinary undefined-symbol
+  // handling) - only the Mach-O header's filetype differs (MH_KEXT_BUNDLE
+  // instead of MH_BUNDLE), which config->isKext handles at write time.
+  if (args.hasArg(OPT_kext))
+    return MH_BUNDLE;
+
   // TODO: -r, -dylinker, -preload...
   Arg *outputArg = args.getLastArg(OPT_bundle, OPT_dylib, OPT_execute);
   if (outputArg == nullptr)
@@ -1853,6 +1860,7 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config = std::make_unique<Configuration>();
   symtab = std::make_unique<SymbolTable>();
   config->outputType = getOutputType(args);
+  config->isKext = args.hasArg(OPT_kext);
   target = createTargetInfo(args);
   depTracker = std::make_unique<DependencyTracker>(
       args.getLastArgValue(OPT_dependency_info));

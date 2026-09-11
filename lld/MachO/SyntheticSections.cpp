@@ -121,7 +121,10 @@ void MachHeaderSection::writeTo(uint8_t *buf) const {
   hdr->magic = target->magic;
   hdr->cputype = target->cpuType;
   hdr->cpusubtype = cpuSubtype();
-  hdr->filetype = config->outputType;
+  // `-kext`: everything else treats this link like an ordinary `-bundle`
+  // (see getOutputType() in Driver.cpp), but the Mach-O header itself must
+  // say MH_KEXT_BUNDLE for XNU's kext loader to accept it.
+  hdr->filetype = config->isKext ? MH_KEXT_BUNDLE : config->outputType;
   hdr->ncmds = loadCommands.size();
   hdr->sizeofcmds = sizeOfCmds;
   // A -static binary is fully self-contained: do not mark it as
